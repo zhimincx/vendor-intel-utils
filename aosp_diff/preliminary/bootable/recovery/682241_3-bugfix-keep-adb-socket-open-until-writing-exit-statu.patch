@@ -1,0 +1,70 @@
+From 5438a357f0d5ffcbec578b6b7a51803207c19f22 Mon Sep 17 00:00:00 2001
+From: "Chen, ZhiminX" <zhiminx.chen@intel.com>
+Date: Tue, 6 Aug 2019 15:07:02 +0800
+Subject: [PATCH] bugfix: keep adb socket open until writing exit-status
+
+serving: 'XXX.zip' (~94%)
+adb: failed to read command: Success
+
+Change-Id: I59a614fbab1fca03030ffef1c4d4250cb99e05ea
+Tracked-On:
+Signed-off-by: Chen, ZhiminX <zhiminx.chen@intel.com>
+---
+ fuse_sideload/fuse_sideload.cpp | 2 --
+ install/fuse_sdcard_install.cpp | 6 +++++-
+ minadbd/minadbd_services.cpp    | 2 ++
+ 3 files changed, 7 insertions(+), 3 deletions(-)
+
+diff --git a/fuse_sideload/fuse_sideload.cpp b/fuse_sideload/fuse_sideload.cpp
+index 3d948030..1f697e9f 100644
+--- a/fuse_sideload/fuse_sideload.cpp
++++ b/fuse_sideload/fuse_sideload.cpp
+@@ -482,8 +482,6 @@ int run_fuse_sideload(std::unique_ptr<FuseDataProvider>&& provider, const char*
+   }
+ 
+ done:
+-  provider->Close();
+-
+   if (umount2(mount_point, MNT_DETACH) == -1) {
+     fprintf(stderr, "fuse_sideload umount failed: %s\n", strerror(errno));
+   }
+diff --git a/install/fuse_sdcard_install.cpp b/install/fuse_sdcard_install.cpp
+index 1aa8768e..81bc77d6 100644
+--- a/install/fuse_sdcard_install.cpp
++++ b/install/fuse_sdcard_install.cpp
+@@ -121,6 +121,7 @@ static std::string BrowseDirectory(const std::string& path, Device* device, Reco
+ 
+ static bool StartSdcardFuse(const std::string& path) {
+   auto file_data_reader = std::make_unique<FuseFileDataProvider>(path, 65536);
++  int status;
+ 
+   if (!file_data_reader->Valid()) {
+     return false;
+@@ -130,7 +131,10 @@ static bool StartSdcardFuse(const std::string& path) {
+   // that our open file continues to work but new references see it as unmounted.
+   umount2("/sdcard", MNT_DETACH);
+ 
+-  return run_fuse_sideload(std::move(file_data_reader)) == 0;
++  status = run_fuse_sideload(std::move(file_data_reader));
++  file_data_reader->Close();
++
++  return status == 0;
+ }
+ 
+ int ApplyFromSdcard(Device* device, RecoveryUI* ui) {
+diff --git a/minadbd/minadbd_services.cpp b/minadbd/minadbd_services.cpp
+index 6c10274d..529c65cc 100644
+--- a/minadbd/minadbd_services.cpp
++++ b/minadbd/minadbd_services.cpp
+@@ -139,6 +139,8 @@ static MinadbdErrorCode RunAdbFuseSideload(int sfd, const std::string& args,
+     }
+   }
+ 
++  sleep(1);
++  adb_data_reader->Close();
+   return kMinadbdSuccess;
+ }
+ 
+-- 
+2.17.1
+
